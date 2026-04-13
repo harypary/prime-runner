@@ -11,6 +11,13 @@ MemoryCaptures/
 *.csproj
 *.sln
 
+# IDE
+.vscode/
+.idea/
+*.sln
+*.slnx
+*.csproj
+
 # OS
 .DS_Store
 Thumbs.db
