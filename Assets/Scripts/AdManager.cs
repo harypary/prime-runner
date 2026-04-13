@@ -46,12 +46,8 @@ public class AdManager : MonoBehaviour
     void Start()
     {
 #if GOOGLE_MOBILE_ADS
-        // 非パーソナライズ広告設定（ATT 非使用・プライバシーポリシーに準拠）
-        var reqConfig = new RequestConfiguration();
-        reqConfig.TagForChildDirectedTreatment = TagForChildDirectedTreatment.Unspecified;
-        reqConfig.TagForUnderAgeOfConsent      = TagForUnderAgeOfConsent.Unspecified;
-        reqConfig.MaxAdContentRating           = MaxAdContentRating.Unspecified;
-        MobileAds.SetRequestConfiguration(reqConfig);
+        // デフォルト設定を適用（各フィールドは読み取り専用のため new のみ）
+        MobileAds.SetRequestConfiguration(new RequestConfiguration());
 
         MobileAds.Initialize(status =>
         {
