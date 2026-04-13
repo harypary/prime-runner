@@ -1,0 +1,14 @@
+<linker>
+  <!-- IL2CPP ストリッピングでゲームロジックが削除されないよう保護 -->
+  <assembly fullname="Assembly-CSharp" preserve="all"/>
+
+  <!-- UnityEngine の動的参照クラスを保護 -->
+  <assembly fullname="UnityEngine">
+    <type fullname="UnityEngine.PlayerPrefs"   preserve="all"/>
+    <type fullname="UnityEngine.Shader"        preserve="all"/>
+    <type fullname="UnityEngine.Material"      preserve="all"/>
+  </assembly>
+
+  <!-- AdMob SDK の型がストリッピングされないよう保護 -->
+  <assembly fullname="GoogleMobileAds" preserve="all"/>
+</linker>

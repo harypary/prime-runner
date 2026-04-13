@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  PrivacyInfo.xcprivacy — iOS 17+ 必須のプライバシーマニフェスト
+  本アプリは個人情報を収集せず、ATT フレームワークを使用しません。
+  PlayerPrefs (NSUserDefaults) のみ使用 (ゲームデータ保存)。
+-->
+<plist version="1.0">
+<dict>
+  <!-- 使用する Required Reason APIs -->
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <dict>
+      <!-- UserDefaults (PlayerPrefs) — ゲームデータ保存のみ -->
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>CA92.1</string><!-- アプリ自身の設定・状態保存 -->
+      </array>
+    </dict>
+  </array>
+
+  <!-- データ収集なし -->
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array/>
+
+  <!-- トラッキングなし -->
+  <key>NSPrivacyTracking</key>
+  <false/>
+
+  <!-- トラッキングドメインなし -->
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+</dict>
+</plist>

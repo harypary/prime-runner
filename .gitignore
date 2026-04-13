@@ -1,0 +1,25 @@
+# Unity
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+.vs/
+*.csproj
+*.sln
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.env
+.env.*
+*.p12
+*.mobileprovision
+*.p8
+node_modules/
