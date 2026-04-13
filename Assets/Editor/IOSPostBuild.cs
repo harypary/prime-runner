@@ -21,8 +21,16 @@ public class IOSPostBuild
         // GADApplicationIdentifier — AdMob App ID
         plist.root.SetString("GADApplicationIdentifier", GAD_APP_ID);
 
-        // 輸出コンプライアンス — 毎回の質問を省略（標準 HTTPS のみ使用）
+        // 輸出コンプライアンス
         plist.root.SetBoolean("ITSAppUsesNonExemptEncryption", false);
+
+        // 日本語のみ対応
+        plist.root.SetString("CFBundleDevelopmentRegion", "ja");
+        if (!plist.root.values.ContainsKey("CFBundleLocalizations"))
+        {
+            var langs = plist.root.CreateArray("CFBundleLocalizations");
+            langs.AddString("ja");
+        }
 
         // ATT フレームワーク不使用を明示（審査官向け）
         // ※ NSUserTrackingUsageDescription は意図的に設定しない（ATT 未使用のため）

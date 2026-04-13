@@ -16,6 +16,7 @@
 using GoogleMobileAds.Api;
 #endif
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class AdManager : MonoBehaviour
@@ -74,9 +75,9 @@ public class AdManager : MonoBehaviour
 
     static AdRequest BuildRequest()
     {
-        // npa=1: 非パーソナライズ広告（ユーザー追跡なし）
+        // npa=1: 非パーソナライズ広告（ユーザー追跡なし・ATT未使用）
         var req = new AdRequest();
-        req.Extras.Add("npa", "1");
+        req.Extras = new Dictionary<string, string> { { "npa", "1" } };
         return req;
     }
 
