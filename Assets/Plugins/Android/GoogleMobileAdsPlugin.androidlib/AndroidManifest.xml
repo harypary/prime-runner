@@ -10,9 +10,5 @@ required for displaying ads.
   <uses-permission android:name="android.permission.INTERNET"/>
   <application>
     <uses-library android:required="false" android:name="org.apache.http.legacy"/>
-    <!-- AdMob App ID -->
-    <meta-data
-        android:name="com.google.android.gms.ads.APPLICATION_ID"
-        android:value="ca-app-pub-8388601065600220~2483206060"/>
   </application>
 </manifest>
