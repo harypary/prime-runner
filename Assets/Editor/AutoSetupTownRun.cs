@@ -76,6 +76,14 @@ public class AutoSetupTownRun : EditorWindow
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
+
+        // シーンを Assets/Scenes/TitleScene.unity に自動保存
+        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        string scenePath = "Assets/Scenes/TitleScene.unity";
+        EnsureFolder("Assets", "Scenes");
+        EditorSceneManager.SaveScene(scene, scenePath);
+        AssetDatabase.Refresh();
+
         Debug.Log("★ PrimeRunner Setup Complete!  Press Play to start. ★");
     }
 
