@@ -1,46 +1,35 @@
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
-using System;
-using System.Linq;
 using UnityEngine;
+using System;
 
 public class BuildScript
 {
-    public static void BuildiOS()
+    public static void BuildIOS()
     {
-        string buildPath = GetArg("-customBuildPath") ?? "ios_build";
+        PlayerSettings.applicationIdentifier = "com.harypary.primerunner";
+        PlayerSettings.bundleVersion = "1.0";
+        PlayerSettings.iOS.buildNumber = Environment.GetEnvironmentVariable("BUILD_NUMBER") ?? "1";
 
         var options = new BuildPlayerOptions
         {
-            scenes = EditorBuildSettings.scenes
-                .Where(s => s.enabled)
-                .Select(s => s.path)
-                .ToArray(),
-            locationPathName = buildPath,
+            scenes = GetEnabledScenes(),
+            locationPathName = "Builds/iOS",
             target = BuildTarget.iOS,
             options = BuildOptions.None
         };
 
-        var report = BuildPipeline.BuildPlayer(options);
+        BuildReport report = BuildPipeline.BuildPlayer(options);
         if (report.summary.result != BuildResult.Succeeded)
-        {
-            Debug.LogError($"[BuildScript] Build failed: {report.summary.result}");
-            EditorApplication.Exit(1);
-        }
-        else
-        {
-            Debug.Log($"[BuildScript] Build succeeded: {buildPath}");
-        }
+            throw new Exception("Build failed: " + report.summary.result);
     }
 
-    static string GetArg(string name)
+    static string[] GetEnabledScenes()
     {
-        var args = Environment.GetCommandLineArgs();
-        for (int i = 0; i < args.Length - 1; i++)
-        {
-            if (args[i] == name)
-                return args[i + 1];
-        }
-        return null;
+        var list = new System.Collections.Generic.List<string>();
+        foreach (var s in EditorBuildSettings.scenes)
+            if (s.enabled) list.Add(s.path);
+        return list.ToArray();
     }
 }

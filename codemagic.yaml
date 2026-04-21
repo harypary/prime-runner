@@ -1,65 +1,221 @@
 workflows:
-  ios-release:
-    name: iOS Release
-    max_build_duration: 60
+  unity-ios:
+    name: Unity iOS Build
+    max_build_duration: 120  # 無料枠は最大120分まで
+    instance_type: mac_mini_m2
+
+    cache:
+      cache_paths:
+        - /Applications/Unity
+        - ~/.cocoapods
+
     environment:
-      unity: 6000.3.10f1
-      xcode: 16.2
-      cocoapods: default
-      vars:
-        UNITY_IOS_EXPORT_PATH: ios_build
-        BUNDLE_ID: com.harypary.primerunner
       groups:
         - unity_credentials
         - ios_credentials
+        - app_store_connect
+      vars:
+        UNITY_VERSION: "6000.3.10f1"
+        UNITY_CHANGESET: "e35f0c77bd8e"
+        BUNDLE_ID: "com.harypary.primerunner"
+        XCODE_SCHEME: "Unity-iPhone"
+        TEAM_ID: "XXXXXXXXXX"               # ← Apple Developer Team ID に変更
+
     scripts:
-      - name: Activate Unity license
+      - name: Install Unity Editor
         script: |
-          unity-editor \
-            -quit \
-            -batchmode \
-            -nographics \
-            -logFile /dev/stdout \
-            -serial "$UNITY_SERIAL" \
-            -username "$UNITY_USERNAME" \
-            -password "$UNITY_PASSWORD"
+          UNITY_BIN=$(find /Applications -name "Unity" -type f 2>/dev/null | head -1)
+          if [ -n "$UNITY_BIN" ]; then
+            echo "Unity already installed (cached): $UNITY_BIN"
+          else
+            echo "Downloading Unity $UNITY_VERSION..."
+            curl -L "https://download.unity3d.com/download_unity/$UNITY_CHANGESET/MacEditorInstaller/Unity.pkg" \
+              -o /tmp/Unity.pkg
+            sudo installer -package /tmp/Unity.pkg -target /
+            echo "Downloading iOS Support..."
+            curl -L "https://download.unity3d.com/download_unity/$UNITY_CHANGESET/MacEditorTargetInstaller/UnitySetup-iOS-Support-for-Editor-$UNITY_VERSION.pkg" \
+              -o /tmp/iOSSupport.pkg
+            sudo installer -package /tmp/iOSSupport.pkg -target /
+            UNITY_BIN=$(find /Applications -name "Unity" -type f 2>/dev/null | head -1)
+            test -n "$UNITY_BIN" && echo "Unity installed OK" || (echo "Unity NOT found" && exit 1)
+          fi
+
+      - name: Activate Unity License
+        script: |
+          ULC=$(find /Applications -name "Unity.Licensing.Client" -type f 2>/dev/null | head -1)
+          echo "Licensing client: $ULC"
+          if [ -z "$ULC" ]; then echo "ERROR: Unity.Licensing.Client not found" && exit 1; fi
+          "$ULC" --activate-ulf \
+            --username "$UNITY_USERNAME" \
+            --password "$UNITY_PASSWORD" \
+            2>&1 | tee /tmp/unity_ulc.log
 
       - name: Build Unity iOS project
         script: |
-          unity-editor \
-            -quit \
-            -batchmode \
-            -nographics \
-            -logFile /dev/stdout \
-            -projectPath . \
+          UNITY_BIN=$(find /Applications -name "Unity" -type f 2>/dev/null | head -1)
+          echo "Using Unity at: $UNITY_BIN"
+          "$UNITY_BIN" \
+            -batchmode -quit -nographics \
+            -logFile /tmp/unity_build.log \
+            -projectPath "$CM_BUILD_DIR" \
             -buildTarget iOS \
-            -executeMethod BuildScript.BuildiOS \
-            -customBuildPath "$UNITY_IOS_EXPORT_PATH"
+            -executeMethod BuildScript.BuildIOS
+          cat /tmp/unity_build.log || true
+          PBXPROJ="$CM_BUILD_DIR/Builds/iOS/Unity-iPhone.xcodeproj/project.pbxproj"
+          test -f "$PBXPROJ" || (echo "xcodeproj not found" && exit 1)
+          echo "xcodeproj generated OK"
 
-      - name: Install CocoaPods
+          # XcodeアセットカタログにApp Storeアイコン(1024x1024)を注入
+          ICON_SRC="$CM_BUILD_DIR/Assets/AppIcon.png"
+          APPICONSET=$(find "$CM_BUILD_DIR/Builds/iOS" -name "AppIcon.appiconset" -type d 2>/dev/null | head -1)
+          echo "AppIcon.appiconset: $APPICONSET"
+          if [ -n "$APPICONSET" ] && [ -f "$ICON_SRC" ]; then
+            cp "$ICON_SRC" "$APPICONSET/Icon-1024.png"
+            python3 -c "import json,os,sys; p=sys.argv[1]+'/Contents.json'; d=json.load(open(p)); imgs=[i for i in d['images'] if i.get('idiom')!='ios-marketing']; imgs.append({'filename':'Icon-1024.png','idiom':'ios-marketing','scale':'1x','size':'1024x1024'}); d['images']=imgs; json.dump(d,open(p,'w'),indent=2); print('icon injected')" "$APPICONSET"
+          else
+            echo "WARNING: AppIcon.appiconset or AppIcon.png not found, skipping icon injection"
+          fi
+
+      - name: Install CocoaPods dependencies
         script: |
-          cd "$UNITY_IOS_EXPORT_PATH"
-          pod install
+          cd "$CM_BUILD_DIR/Builds/iOS"
+          # Pod署名競合を防ぐpost_installフック
+          printf '\npost_install do |installer|\n  installer.pods_project.targets.each do |target|\n    target.build_configurations.each do |config|\n      config.build_settings["CODE_SIGNING_ALLOWED"] = "NO"\n    end\n  end\nend\n' >> Podfile
+          echo "post_install hook added to Podfile"
+          pod install --no-repo-update
+          echo "Pods installed"
+          ls -la
+          test -d "$CM_BUILD_DIR/Builds/iOS/Unity-iPhone.xcworkspace" || (echo "ERROR: xcworkspace not created by pod install" && exit 1)
+          echo "xcworkspace OK"
 
       - name: Set up code signing
         script: |
-          keychain initialize
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
-          keychain add-certificates
-          xcode-project use-profiles
+          echo "$CM_CERTIFICATE" | base64 -d > /tmp/cert.p12
+          echo "$CM_PROVISIONING_PROFILE" | base64 -d > /tmp/profile.mobileprovision
 
-      - name: Build Xcode project
+          # プロビジョニングプロファイルを展開・インストール
+          PROFILE_UUID=$(security cms -D -i /tmp/profile.mobileprovision | plutil -extract UUID raw -)
+          echo "Profile UUID: $PROFILE_UUID"
+          echo "$PROFILE_UUID" > /tmp/profile_uuid.txt
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
+
+          # 証明書インポート
+          keychain initialize || true
+          keychain add-certificates \
+            --certificate /tmp/cert.p12 \
+            --certificate-password "$CM_CERTIFICATE_PASSWORD" || true
+          security import /tmp/cert.p12 \
+            -k ~/Library/Keychains/login.keychain-db \
+            -P "$CM_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/xcodebuild \
+            -A || true
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "" \
+            ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+          security list-keychains -d user -s \
+            ~/Library/Keychains/login.keychain-db \
+            $(security list-keychains -d user | tr -d '"' | tr '\n' ' ') || true
+
+          # 証明書確認
+          security find-identity -v -p codesigning
+          if ! security find-identity -v -p codesigning | grep -q "Apple Distribution\|iPhone Distribution"; then
+            echo "ERROR: Certificate import failed"
+            exit 1
+          fi
+          echo "Certificate verified OK"
+
+          # pbxprojのコード署名設定をパッチ
+          IOS_DIR="$CM_BUILD_DIR/Builds/iOS"
+          PBXPROJ="$IOS_DIR/Unity-iPhone.xcodeproj/project.pbxproj"
+
+          perl -i -pe 's/CODE_SIGN_IDENTITY(\[.*?\])? = "[^"]+"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
+          perl -i -pe 's/"CODE_SIGN_IDENTITY(\[.*?\])?" = "[^"]+"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
+          perl -i -pe 's/CODE_SIGN_STYLE = "?Automatic"?;/CODE_SIGN_STYLE = Manual;/g' "$PBXPROJ"
+          perl -i -pe "s/DEVELOPMENT_TEAM = [^;]*;/DEVELOPMENT_TEAM = $TEAM_ID;/g" "$PBXPROJ"
+          perl -i -ne 'print unless /PROVISIONING_PROFILE_SPECIFIER/' "$PBXPROJ"
+
+          PROFILE_UUID_CURR=$(cat /tmp/profile_uuid.txt)
+          ESCAPED_BUNDLE=$(echo "$BUNDLE_ID" | sed 's/\./\\./g')
+          perl -i -0pe "s/(PRODUCT_BUNDLE_IDENTIFIER = \"?${ESCAPED_BUNDLE}\"?;)/\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$PROFILE_UUID_CURR\";/g" "$PBXPROJ"
+          perl -i -ne 'print unless /PROVISIONING_PROFILE_SPECIFIER.*\$\(PROVISIONING_PROFILE_SPECIFIER/' "$PBXPROJ"
+
+          SPECIFIER_COUNT=$(grep -c "PROVISIONING_PROFILE_SPECIFIER = \"$PROFILE_UUID_CURR\"" "$PBXPROJ" 2>/dev/null || echo 0)
+          echo "PROVISIONING_PROFILE_SPECIFIER inserted $SPECIFIER_COUNT time(s)"
+          if [ "$SPECIFIER_COUNT" = "0" ]; then
+            echo "ERROR: Failed to insert PROVISIONING_PROFILE_SPECIFIER"
+            grep "PRODUCT_BUNDLE_IDENTIFIER" "$PBXPROJ"
+            exit 1
+          fi
+
+          # export_options.plist生成
+          PROFILE_UUID_VAL=$(cat /tmp/profile_uuid.txt)
+          PLIST="$CM_BUILD_DIR/export_options.plist"
+          python3 -c "import plistlib,sys; d={'method':'app-store-connect','teamID':sys.argv[3],'signingStyle':'manual','signingCertificate':'Apple Distribution','provisioningProfiles':{sys.argv[2]:sys.argv[1]}}; open(sys.argv[4],'wb').write(plistlib.dumps(d,fmt=plistlib.FMT_XML)); print('plist written')" "$PROFILE_UUID_VAL" "$BUNDLE_ID" "$TEAM_ID" "$PLIST"
+          plutil -lint "$PLIST" && echo "export_options.plist OK" || (echo "export_options.plist INVALID" && exit 1)
+
+      - name: Build IPA
         script: |
-          xcode-project build-ipa \
-            --workspace "$UNITY_IOS_EXPORT_PATH/Unity-iPhone.xcworkspace" \
-            --scheme "Unity-iPhone" \
-            --config "Release"
+          PROFILE_UUID=$(cat /tmp/profile_uuid.txt)
+          IOS_DIR="$CM_BUILD_DIR/Builds/iOS"
+          ARCHIVE_PATH=/tmp/Unity-iPhone.xcarchive
+          EXPORT_PATH=/tmp/ipa
+          echo "Building IPA with profile UUID: $PROFILE_UUID"
+
+          if [ -d "$IOS_DIR/Unity-iPhone.xcworkspace" ]; then
+            WORKSPACE_ARG="-workspace $IOS_DIR/Unity-iPhone.xcworkspace"
+          else
+            echo "ERROR: xcworkspace not found"
+            exit 1
+          fi
+
+          xcodebuild \
+            $WORKSPACE_ARG \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -configuration Release \
+            -archivePath "$ARCHIVE_PATH" \
+            archive \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $HOME/Library/Keychains/login.keychain-db" \
+            > /tmp/xcodebuild_archive.log 2>&1
+          ARCHIVE_EXIT=$?
+          if [ $ARCHIVE_EXIT -ne 0 ]; then
+            echo "=== Archive errors ==="
+            grep -E "error:|warning: .*requires|conflicting|does not support" /tmp/xcodebuild_archive.log || true
+            echo "=== Last 30 lines ==="
+            tail -30 /tmp/xcodebuild_archive.log
+            exit 1
+          fi
+          echo "Archive succeeded"
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_PATH" \
+            -exportOptionsPlist "$CM_BUILD_DIR/export_options.plist" \
+            > /tmp/xcodebuild_export.log 2>&1
+          EXPORT_EXIT=$?
+          if [ $EXPORT_EXIT -ne 0 ]; then
+            echo "=== Export log ==="
+            cat /tmp/xcodebuild_export.log
+            exit 1
+          fi
+
+          echo "--- IPA files ---"
+          ls -la "$EXPORT_PATH"
 
     artifacts:
-      - build/ios/ipa/*.ipa
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - /tmp/ipa/*.ipa
+      - /tmp/unity_build.log
+      - /tmp/unity_ulc.log
+      - /tmp/xcodebuild_archive.log
+      - /tmp/xcodebuild_export.log
 
     publishing:
       app_store_connect:
