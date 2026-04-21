@@ -1,0 +1,69 @@
+workflows:
+  ios-release:
+    name: iOS Release
+    max_build_duration: 60
+    environment:
+      unity: 6000.3.10f1
+      xcode: 16.2
+      cocoapods: default
+      vars:
+        UNITY_IOS_EXPORT_PATH: ios_build
+        BUNDLE_ID: com.harypary.primerunner
+      groups:
+        - unity_credentials
+        - ios_credentials
+    scripts:
+      - name: Activate Unity license
+        script: |
+          unity-editor \
+            -quit \
+            -batchmode \
+            -nographics \
+            -logFile /dev/stdout \
+            -serial "$UNITY_SERIAL" \
+            -username "$UNITY_USERNAME" \
+            -password "$UNITY_PASSWORD"
+
+      - name: Build Unity iOS project
+        script: |
+          unity-editor \
+            -quit \
+            -batchmode \
+            -nographics \
+            -logFile /dev/stdout \
+            -projectPath . \
+            -buildTarget iOS \
+            -executeMethod BuildScript.BuildiOS \
+            -customBuildPath "$UNITY_IOS_EXPORT_PATH"
+
+      - name: Install CocoaPods
+        script: |
+          cd "$UNITY_IOS_EXPORT_PATH"
+          pod install
+
+      - name: Set up code signing
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: Build Xcode project
+        script: |
+          xcode-project build-ipa \
+            --workspace "$UNITY_IOS_EXPORT_PATH/Unity-iPhone.xcworkspace" \
+            --scheme "Unity-iPhone" \
+            --config "Release"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
+    publishing:
+      app_store_connect:
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
+        submit_to_testflight: true
