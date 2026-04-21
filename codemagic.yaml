@@ -19,7 +19,7 @@ workflows:
         UNITY_CHANGESET: "e35f0c77bd8e"
         BUNDLE_ID: "com.harypary.primerunner"
         XCODE_SCHEME: "Unity-iPhone"
-        TEAM_ID: "XXXXXXXXXX"               # ← Apple Developer Team ID に変更
+        TEAM_ID: "47BSX989JQ"
 
     scripts:
       - name: Install Unity Editor
